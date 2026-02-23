@@ -1,4 +1,4 @@
-module github.com/pmj1426/mssql
+module github.com/pmj1426/mssql2
 
 go 1.24.0
 
