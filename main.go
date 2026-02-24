@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"math"
+	"os/exec"
 	"time"
 
 	_ "github.com/microsoft/go-mssqldb"
@@ -17,6 +18,7 @@ type Schema struct {
 	Port      int    `key:"port" default:"3306"`
 	KDCServer string `key:"kdcserver"`
 	KRBPath   string `key:"krbpath"`
+	Domain    string `key:"domain"`
 	Username  string `key:"username"`
 	Password  string `key:"password"`
 	Database  string `key:"database"`
@@ -37,6 +39,10 @@ func Validate(config string) error {
 
 	if conf.Port <= 0 || conf.Port > 65535 {
 		return fmt.Errorf("port is invalid; got %d", conf.Port)
+	}
+
+	if conf.Domain == "" {
+		return fmt.Errorf("username is required; got %q", conf.Domain)
 	}
 
 	if conf.Username == "" {
@@ -73,6 +79,24 @@ func Run(ctx context.Context, config string) error {
 	deadline, ok := ctx.Deadline()
 	if !ok {
 		return fmt.Errorf("context deadline is not set")
+	}
+
+	cmd := exec.Command("kinit", fmt.Sprintf("%v@%v", conf.Username, conf.Domain))
+
+	// Pipe password to kinit stdin
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("failed to get stdin pipe: %w", err)
+	}
+
+	go func() {
+		defer stdin.Close()
+		fmt.Fprintln(stdin, conf.Password)
+	}()
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("kinit failed: %v\nOutput: %s", err, string(output))
 	}
 
 	AdoConnStr := fmt.Sprintf(
